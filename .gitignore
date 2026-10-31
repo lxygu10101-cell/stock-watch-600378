@@ -1,0 +1,8 @@
+state.json
+state.json.tmp
+__pycache__/
+*.pyc
+.env
+.env.local
+gh_*.log
+

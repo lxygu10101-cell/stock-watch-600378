@@ -1,0 +1,59 @@
+name: stock-watch
+
+on:
+  schedule:
+    # GitHub 的 cron 用 UTC。北京时间 09:25-11:30 / 13:00-15:00
+    # = UTC 01:25-03:30 / 05:00-07:00。多跑一点，脚本自己会过滤非交易时段。
+    - cron: "*/5 1-3,5-7 * * 1-5"
+  workflow_dispatch:        # 手动触发，方便调试
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 状态文件靠 cache 在两次运行之间传递：用 run_id 做唯一 key，
+      # restore-keys 前缀匹配到最近一次保存的缓存。
+      - name: 恢复状态
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: stock-state-${{ github.run_id }}
+          restore-keys: stock-state-
+
+      - name: 检查行情
+        env:
+          STOCK_SECID: ${{ vars.STOCK_SECID || '1.600378' }}
+          TARGET_PRICE: ${{ vars.TARGET_PRICE || '40.00' }}
+          DIRECTION: ${{ vars.DIRECTION || 'up' }}
+          HYSTERESIS_PCT: ${{ vars.HYSTERESIS_PCT || '0.5' }}
+          ALERT_IF_ALREADY_MET: ${{ vars.ALERT_IF_ALREADY_MET || '0' }}
+          NOTIFY_CHANNEL: ${{ vars.NOTIFY_CHANNEL || 'email' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '465' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          # ntfy 备选通道（当前网络不可用，需要时再填）
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          touch state.json
+          python3 watch.py
+
+      - name: 保存状态
+        if: always() && hashFiles('state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: stock-state-${{ github.run_id }}
